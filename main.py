@@ -147,13 +147,12 @@ app.add_middleware(
 # ================= Error Handlers =================
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    """Handle FastAPI HTTPExceptions and notify Telegram only for /scrape/ endpoints"""
-    if "/scrape/" in str(request.url):
+    if "/scrape/" in str(request.url.path):
         await notify_telegram(
             f"⚠️ HTTPException\n"
             f"Status: {exc.status_code}\n"
             f"Detail: {exc.detail}\n"
-            f"Path: {request.url}"
+            f"Path: {request.url.path}"
         )
     return JSONResponse(
         status_code=exc.status_code,
@@ -161,19 +160,18 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "error": True,
             "status_code": exc.status_code,
             "detail": exc.detail,
-            "path": str(request.url),
+            "path": str(request.url.path),
             "timestamp": time.time(),
         },
     )
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    """Handle rate limit errors and notify Telegram only for /scrape/ endpoints"""
-    if "/scrape/" in str(request.url):
+    if "/scrape/" in str(request.url.path):
         await notify_telegram(
             f"🚫 Rate Limit Exceeded\n"
             f"Client: {request.client.host}\n"
-            f"Path: {request.url}"
+            f"Path: {request.url.path}"
         )
     return JSONResponse(
         status_code=429,
@@ -181,32 +179,28 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
             "error": True,
             "status_code": 429,
             "detail": "Rate limit exceeded. Try again later.",
-            "path": str(request.url),
+            "path": str(request.url.path),
             "timestamp": time.time(),
         },
     )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
-    """Catch-all handler for unexpected exceptions"""
     logger.error(f"Unexpected error: {exc}", exc_info=True)
-    
-    # Only notify Telegram for /scrape/ endpoint errors
-    if "/scrape/" in str(request.url):
+    if "/scrape/" in str(request.url.path):
         await notify_telegram(
             f"🔥 Unhandled Exception\n"
             f"Type: {type(exc).__name__}\n"
             f"Error: {str(exc)}\n"
-            f"Path: {request.url}"
+            f"Path: {request.url.path}"
         )
-    
     return JSONResponse(
         status_code=500,
         content={
             "error": True,
             "status_code": 500,
             "detail": "Internal Server Error",
-            "path": str(request.url),
+            "path": str(request.url.path),
             "timestamp": time.time(),
         },
     )
@@ -214,23 +208,19 @@ async def global_exception_handler(request: Request, exc: Exception):
 # ================= API Logic =================
 async def scrape_user(username: str):
     username = username.lower()
-
     cached = CACHE.get(username)
     if cached and cached["expiry"] > time.time():
         return cached["data"]
 
     url = f"https://i.instagram.com/api/v1/users/web_profile_info/?username={username}"
-
     try:
         result = await async_client.get(url, headers=get_random_headers())
-        
         if result.status_code != 200:
             await handle_error(
                 status_code=result.status_code,
                 detail=f"Instagram API returned {result.status_code}",
                 notify_msg=f"Instagram API error for {username}: {result.status_code}"
             )
-            
     except httpx.RequestError as e:
         await handle_error(
             status_code=502,
@@ -270,7 +260,7 @@ async def scrape_user(username: str):
 
 # ================= Routes =================
 @app.get("/scrape/{username}")
-@limiter.limit("10/10minute")  # 🔒 10 requests per 10 minutes per IP
+@limiter.limit("10/10minute")
 async def get_user(username: str, request: Request):
     return await scrape_user(username)
 
