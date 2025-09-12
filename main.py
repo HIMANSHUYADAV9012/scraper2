@@ -286,4 +286,13 @@ async def proxy_image(request: Request, url: str = Query(..., description="Image
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": time.time()}
+    return {
+        "status": "healthy",
+        "timestamp": time.time()
+    }
+
+# ✅ HEAD ke liye handler (UptimeRobot ke liye)
+@app.head("/health")
+async def health_check_head():
+    return JSONResponse(content=None, status_code=200)
+
